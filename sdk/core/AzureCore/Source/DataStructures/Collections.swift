@@ -95,15 +95,13 @@ public struct PagedCodingKeys {
 public class PagedCollection<SingleElement: Codable>: PagedCollectionDelegate {
     // MARK: Properties
 
-    public typealias Element = [SingleElement]
-
     /// Returns the current running list of items.
-    public var items: Element? {
+    public var items: [SingleElement]? {
         return _items
     }
 
     /// Returns the subset of items that corresponds to the current page.
-    public var pageItems: Element? {
+    public var pageItems: [SingleElement]? {
         guard let range = pageRange else { return nil }
         guard let slice = _items?[range] else { return nil }
         return Array(slice)
@@ -120,7 +118,11 @@ public class PagedCollection<SingleElement: Codable>: PagedCollectionDelegate {
         return continuationToken == nil
     }
 
-    private var _items: Element?
+    /// Returns a `Sequence` that can be used to iterate through this `PagedCollection` synchronously.
+    public lazy var syncCollection = PagedCollectionSequence(self)
+
+    private var _items: [SingleElement]?
+
 
     private weak var delegate: PagedCollectionDelegate?
 
@@ -133,7 +135,7 @@ public class PagedCollection<SingleElement: Codable>: PagedCollectionDelegate {
     private var requestHeaders: HTTPHeaders!
 
     /// An index which tracks the next item to be returned when using the nextItem method.
-    private var iteratorIndex: Int = 0
+    fileprivate var iteratorIndex: Int = 0
 
     /// A reference to the configured client that created the PagedCollection. Needed to make follow-up
     /// calls to retrieve additional pages.
@@ -172,7 +174,7 @@ public class PagedCollection<SingleElement: Codable>: PagedCollectionDelegate {
     // MARK: Public Methods
 
     /// Retrieves the next page of results asynchronously.
-    public func nextPage(then completion: @escaping Continuation<Element>) {
+    public func nextPage(then completion: @escaping Continuation<[SingleElement]>) {
         // exit if there is no valid continuation token
         guard let continuationToken = continuationToken,
             continuationToken != "" else {
@@ -279,7 +281,7 @@ public class PagedCollection<SingleElement: Codable>: PagedCollectionDelegate {
         continuationToken = codingKeys.continuationToken(fromJson: json)
 
         let itemData = try JSONSerialization.data(withJSONObject: itemJson)
-        let newItems = try decoder.decode(Element.self, from: itemData)
+        let newItems = try decoder.decode([SingleElement].self, from: itemData)
         if let currentItems = _items {
             // append rather than throw away old items
             pageRange = currentItems.count ..< (currentItems.count + newItems.count)
@@ -287,6 +289,54 @@ public class PagedCollection<SingleElement: Codable>: PagedCollectionDelegate {
         } else {
             _items = newItems
             pageRange = 0 ..< newItems.count
+        }
+    }
+}
+
+public struct PagedCollectionSequence<SingleElement: Codable>: Sequence {
+    let collection: PagedCollection<SingleElement>
+
+    init(_ collection: PagedCollection<SingleElement>) {
+        self.collection = collection
+    }
+
+    public func makeIterator() -> PagedCollectionIterator<SingleElement> {
+        return PagedCollectionIterator(collection)
+    }
+}
+
+public struct PagedCollectionIterator<SingleElement: Codable>: IteratorProtocol {
+    let collection: PagedCollection<SingleElement>
+
+    init(_ collection: PagedCollection<SingleElement>) {
+        self.collection = collection
+    }
+
+    public func next() -> SingleElement? {
+        guard let pageItems = collection.pageItems else { return nil }
+        var moreData = true
+
+        if collection.iteratorIndex >= pageItems.count {
+            let syncGroup = DispatchGroup()
+            syncGroup.enter()
+            collection.nextPage { result in
+                if case let .success(newPage) = result {
+                    self.collection.iteratorIndex = 0
+                    if newPage == nil {
+                        moreData = false
+                    }
+                }
+                syncGroup.leave()
+            }
+            syncGroup.wait()
+        }
+
+        if moreData, let item = collection.pageItems?[collection.iteratorIndex] {
+            collection.iteratorIndex += 1
+            return item
+        } else {
+            collection.iteratorIndex = 0
+            return nil
         }
     }
 }
