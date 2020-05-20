@@ -167,6 +167,53 @@ public class PagedCollection<Element: Codable> {
 
     // MARK: Public Methods
 
+    public func forEachItem(_ body: @escaping (Element) throws -> Bool) throws {
+        var moveNext = true
+
+        try forEachPage { items in
+            while moveNext {
+                if self.iteratorIndex < items.count {
+                    let item = items[self.iteratorIndex]
+                    self.iteratorIndex += 1
+                    moveNext = try body(item)
+                } else {
+                    self.iteratorIndex = 0
+                    break
+                }
+            }
+            return moveNext
+        }
+    }
+
+    public func forEachPage(_ body: @escaping ([Element]) throws -> Bool) throws {
+        guard let items = pageItems else { return }
+        var moveNext = try body(items)
+        var pageError: Error?
+
+        while moveNext, pageError == nil {
+            nextPage { result in
+                switch result {
+                case let .failure(error):
+                    pageError = error
+                case let .success(newPage):
+                    if let items = newPage {
+                        do {
+                            moveNext = try body(items)
+                        } catch {
+                            pageError = error
+                        }
+                    } else {
+                        moveNext = false
+                    }
+                }
+            }
+        }
+
+        if let pageError = pageError {
+            throw pageError
+        }
+    }
+
     /// Retrieves the next page of results asynchronously.
     public func nextPage(then completion: @escaping (Result<[Element], Error>) -> Void) {
         // exit if there is no valid continuation token
