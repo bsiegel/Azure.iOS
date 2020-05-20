@@ -299,25 +299,25 @@ public struct PagedCollectionSequence<Element: Codable>: Sequence {
     }
 }
 
-public struct PagedCollectionIterator<Element: Codable>: IteratorProtocol {
+public class PagedCollectionIterator<Element: Codable>: IteratorProtocol {
     private let collection: PagedCollection<Element>
+    private var moreData = true
 
     fileprivate init(_ collection: PagedCollection<Element>) {
         self.collection = collection
     }
 
     public func next() -> Element? {
-        guard let pageItems = collection.pageItems else { return nil }
-        var moreData = true
+        guard let itemCount = collection.pageItems?.count else { return nil }
 
-        if collection.iteratorIndex >= pageItems.count {
+        if moreData, collection.iteratorIndex >= itemCount {
             let syncGroup = DispatchGroup()
             syncGroup.enter()
             collection.nextPage { result in
                 if case let .success(newPage) = result {
                     self.collection.iteratorIndex = 0
                     if newPage == nil {
-                        moreData = false
+                        self.moreData = false
                     }
                 }
                 syncGroup.leave()
