@@ -27,8 +27,6 @@
 import Foundation
 import os.log
 
-public typealias Continuation<T> = (Result<T, Error>) -> Void
-
 /// Protocol which allows clients to customize how they work with Paged Collections.
 public protocol PageableClient: PipelineClient {
     // MARK: Required Methods
@@ -92,16 +90,16 @@ public struct PagedCodingKeys {
 }
 
 /// A collection that fetches paged results in a lazy fashion.
-public class PagedCollection<SingleElement: Codable> {
+public class PagedCollection<Element: Codable> {
     // MARK: Properties
 
     /// Returns the current running list of items.
-    public var items: [SingleElement]? {
+    public var items: [Element]? {
         return _items
     }
 
     /// Returns the subset of items that corresponds to the current page.
-    public var pageItems: [SingleElement]? {
+    public var pageItems: [Element]? {
         guard let range = pageRange else { return nil }
         guard let slice = _items?[range] else { return nil }
         return Array(slice)
@@ -121,7 +119,7 @@ public class PagedCollection<SingleElement: Codable> {
     /// Returns a `Sequence` that can be used to iterate through this `PagedCollection` synchronously.
     public lazy var syncCollection = PagedCollectionSequence(self)
 
-    private var _items: [SingleElement]?
+    private var _items: [Element]?
 
 
     private var pageRange: Range<Int>?
@@ -170,7 +168,7 @@ public class PagedCollection<SingleElement: Codable> {
     // MARK: Public Methods
 
     /// Retrieves the next page of results asynchronously.
-    public func nextPage(then completion: @escaping Continuation<[SingleElement]>) {
+    public func nextPage(then completion: @escaping (Result<[Element], Error>) -> Void) {
         // exit if there is no valid continuation token
         guard let continuationToken = continuationToken,
             continuationToken != "" else {
@@ -182,7 +180,7 @@ public class PagedCollection<SingleElement: Codable> {
         guard let url = client.continuationUrl(forRequestUrl: requestUrl, withContinuationToken: continuationToken)
         else { return }
         var context: PipelineContext?
-        if let xmlType = SingleElement.self as? XMLModel.Type {
+        if let xmlType = Element.self as? XMLModel.Type {
             let xmlMap = XMLMap(withPagedCodingKeys: codingKeys, innerType: xmlType)
             context = PipelineContext.of(keyValues: [
                 ContextKey.xmlMap.rawValue: xmlMap as AnyObject
@@ -217,7 +215,7 @@ public class PagedCollection<SingleElement: Codable> {
     }
 
     /// Retrieves the next item in the collection, automatically fetching new pages when needed.
-    public func nextItem(then completion: @escaping Continuation<SingleElement>) {
+    public func nextItem(then completion: @escaping (Result<Element, Error>) -> Void) {
         guard let pageItems = pageItems else {
             // do not call the completion handler if there is no data
             return
@@ -261,7 +259,7 @@ public class PagedCollection<SingleElement: Codable> {
         continuationToken = codingKeys.continuationToken(fromJson: json)
 
         let itemData = try JSONSerialization.data(withJSONObject: itemJson)
-        let newItems = try decoder.decode([SingleElement].self, from: itemData)
+        let newItems = try decoder.decode([Element].self, from: itemData)
         if let currentItems = _items {
             // append rather than throw away old items
             pageRange = currentItems.count ..< (currentItems.count + newItems.count)
@@ -273,26 +271,26 @@ public class PagedCollection<SingleElement: Codable> {
     }
 }
 
-public struct PagedCollectionSequence<SingleElement: Codable>: Sequence {
-    let collection: PagedCollection<SingleElement>
+public struct PagedCollectionSequence<Element: Codable>: Sequence {
+    private let collection: PagedCollection<Element>
 
-    init(_ collection: PagedCollection<SingleElement>) {
+    fileprivate init(_ collection: PagedCollection<Element>) {
         self.collection = collection
     }
 
-    public func makeIterator() -> PagedCollectionIterator<SingleElement> {
+    public func makeIterator() -> PagedCollectionIterator<Element> {
         return PagedCollectionIterator(collection)
     }
 }
 
-public struct PagedCollectionIterator<SingleElement: Codable>: IteratorProtocol {
-    let collection: PagedCollection<SingleElement>
+public struct PagedCollectionIterator<Element: Codable>: IteratorProtocol {
+    private let collection: PagedCollection<Element>
 
-    init(_ collection: PagedCollection<SingleElement>) {
+    fileprivate init(_ collection: PagedCollection<Element>) {
         self.collection = collection
     }
 
-    public func next() -> SingleElement? {
+    public func next() -> Element? {
         guard let pageItems = collection.pageItems else { return nil }
         var moreData = true
 
