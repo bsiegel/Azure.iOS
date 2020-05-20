@@ -38,9 +38,9 @@ public protocol PageableClient: PipelineClient {
 public struct PagedCodingKeys {
     // MARK: Properties
 
-    public let items: String
-    public let xmlItemName: String?
-    public let continuationToken: String
+    internal let items: String
+    internal let xmlItemName: String?
+    internal let continuationToken: String
 
     // MARK: Initializers
 
@@ -256,37 +256,6 @@ public class PagedCollection<Element: Codable> {
             if let pageItems = self.pageItems {
                 DispatchQueue.main.async {
                     completion(.success(pageItems))
-                }
-            }
-        }
-    }
-
-    /// Retrieves the next item in the collection, automatically fetching new pages when needed.
-    public func nextItem(then completion: @escaping (Result<Element, Error>) -> Void) {
-        guard let pageItems = pageItems else {
-            // do not call the completion handler if there is no data
-            return
-        }
-        if iteratorIndex >= pageItems.count {
-            nextPage { result in
-                switch result {
-                case let .failure(error):
-                    DispatchQueue.main.async {
-                        completion(.failure(error))
-                    }
-                case let .success(newPage):
-                    // since we return the first new item, the next iteration should start with the second item.
-                    self.iteratorIndex = 1
-                    DispatchQueue.main.async {
-                        completion(.success(newPage[0]))
-                    }
-                }
-            }
-        } else {
-            if let item = self.pageItems?[iteratorIndex] {
-                iteratorIndex += 1
-                DispatchQueue.main.async {
-                    completion(.success(item))
                 }
             }
         }
