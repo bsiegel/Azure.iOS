@@ -1,4 +1,4 @@
-// swift-tools-version:5.1
+// swift-tools-version:5.3
 //  The swift-tools-version declares the minimum version of Swift required to build this package.
 //
 // --------------------------------------------------------------------------
@@ -39,7 +39,9 @@ let package = Package(
         .library(name: "AzureIdentity", targets: ["AzureIdentity"]),
         .library(name: "AzureStorageBlob", targets: ["AzureStorageBlob"])
     ],
-    dependencies: [],
+    dependencies: [
+        .package(url: "https://github.com/mitchdenny/microsoft-authentication-library-for-objc.git", .branch("swift-pm-via-binary-framework"))
+    ],
     targets: [
         // Build targets
         .target(
@@ -50,7 +52,7 @@ let package = Package(
         ),
         .target(
             name: "AzureIdentity",
-            dependencies: ["AzureCore"],
+            dependencies: ["AzureCore", "microsoft-authentication-library-for-objc"],
             path: "sdk/identity/AzureIdentity",
             sources: ["Source"]
         ),
@@ -67,13 +69,13 @@ let package = Package(
             path: "sdk/core/AzureCore",
             sources: ["Tests"]
         ),
-        .target(
+        .testTarget(
             name: "AzureIdentityTests",
             dependencies: ["AzureIdentity"],
             path: "sdk/identity/AzureIdentity",
             sources: ["Tests"]
         ),
-        .target(
+        .testTarget(
             name: "AzureStorageBlobTests",
             dependencies: ["AzureStorageBlob"],
             path: "sdk/storage/AzureStorageBlob",
